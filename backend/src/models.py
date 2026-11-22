@@ -105,6 +105,72 @@ class Resurvey(Base):
     verified_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     notes = Column(Text, nullable=True)
 
+class ResurveyReading(Base):
+    """Per-manhole reading taken after a repair. One row per cover per zone."""
+    __tablename__ = "resurvey_readings"
+    id = Column(Integer, primary_key=True)
+    zone_id = Column(Integer, ForeignKey("repair_zones.id"), nullable=False)
+    manhole_id = Column(Integer, ForeignKey("manhole_assets.id"), nullable=False)
+    survey_point_id = Column(Integer, ForeignKey("survey_points.id"), nullable=True)
+    settlement_mm = Column(Float, nullable=False)
+    x = Column(Float, nullable=False)
+    y = Column(Float, nullable=False)
+    measured_at = Column(DateTime(timezone=True), nullable=False)
+    notes = Column(Text, nullable=True)
+    recorded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    manhole = relationship("ManholeAsset")
+    zone = relationship("RepairZone")
+    __table_args__ = (UniqueConstraint("zone_id", "manhole_id", name="uq_resurvey_zone_manhole"),)
+
+class ResidualAnalysis(Base):
+    """Immutable result of clustering over-threshold resurvey readings."""
+    __tablename__ = "residual_analyses"
+    id = Column(Integer, primary_key=True)
+    analysis_code = Column(String(80), unique=True, nullable=False)
+    zone_id = Column(Integer, ForeignKey("repair_zones.id"), nullable=False)
+    status = Column(String(30), nullable=False, default="succeeded")
+    input_fingerprint = Column(String(64), nullable=False)
+    params = Column(JSON, nullable=False, default=dict)
+    result = Column(JSON, nullable=False, default=dict)
+    reading_count = Column(Integer, nullable=False, default=0)
+    residual_count = Column(Integer, nullable=False, default=0)
+    scatter_count = Column(Integer, nullable=False, default=0)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+
+class ScatterDecision(Base):
+    """Supervisor judgement for an over-threshold point outside a residual cluster."""
+    __tablename__ = "scatter_decisions"
+    id = Column(Integer, primary_key=True)
+    zone_id = Column(Integer, ForeignKey("repair_zones.id"), nullable=False)
+    analysis_id = Column(Integer, ForeignKey("residual_analyses.id"), nullable=False)
+    manhole_id = Column(Integer, ForeignKey("manhole_assets.id"), nullable=False)
+    decision = Column(String(20), nullable=False)
+    note = Column(Text, nullable=True)
+    decided_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    decided_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("analysis_id", "manhole_id", name="uq_scatter_analysis_manhole"),)
+
+class CloseoutReceipt(Base):
+    """Idempotent sign-off receipt: one durable conclusion per repair zone."""
+    __tablename__ = "closeout_receipts"
+    id = Column(Integer, primary_key=True)
+    receipt_code = Column(String(80), unique=True, nullable=False)
+    zone_id = Column(Integer, ForeignKey("repair_zones.id"), nullable=False)
+    analysis_id = Column(Integer, ForeignKey("residual_analyses.id"), nullable=False)
+    input_fingerprint = Column(String(64), nullable=False)
+    decision = Column(String(30), nullable=False, default="closed")
+    conclusion = Column(JSON, nullable=False, default=dict)
+    signer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    signer = Column(String(160), nullable=False)
+    note = Column(Text, nullable=True)
+    idempotency_key = Column(String(80), nullable=True)
+    signed_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    __table_args__ = (UniqueConstraint("zone_id", name="uq_closeout_zone"),)
+
 class AnalysisJob(Base):
     __tablename__ = "analysis_jobs"
     id = Column(Integer, primary_key=True)

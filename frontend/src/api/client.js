@@ -17,3 +17,9 @@ export const acknowledgeNotice=id=>api(`/work-notices/${id}/acknowledge`,{method
 export const startRepair=id=>api(`/zones/${id}/start-repair`,{method:'POST'});
 export const submitResurvey=(id,payload)=>api(`/zones/${id}/resurvey`,{method:'POST',body:JSON.stringify(payload)});
 export const verifyResurvey=id=>api(`/resurveys/${id}/verify`,{method:'POST'});
+export const recordReadings=(id,readings)=>api(`/zones/${id}/readings`,{method:'POST',body:JSON.stringify({readings})});
+export const zoneResidual=id=>api(`/zones/${id}/residual`);
+export const runResidualAnalysis=id=>api(`/zones/${id}/residual-analysis`,{method:'POST'});
+export const decideScatter=(id,decisions)=>api(`/zones/${id}/scatter-decisions`,{method:'POST',body:JSON.stringify({decisions})});
+export const signCloseout=(id,payload)=>api(`/zones/${id}/closeout`,{method:'POST',body:JSON.stringify(payload)});
+export const closeoutReceipt=id=>api(`/zones/${id}/closeout-receipt`);

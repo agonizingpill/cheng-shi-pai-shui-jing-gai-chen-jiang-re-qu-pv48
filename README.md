@@ -27,7 +27,8 @@
 5. 07:53，西环路热区与 `WN-XH-20261121` 的施工围挡重叠，主管按 `x=1126.5` 拆成两个道路边界片区。
 6. 08:05，操作员为南河路热区提交 `SG-2026-NH-071` 施工联动单，主管确认后进入维修。
 7. 16:20，施工队提交同片区复测，沉降从约 11.95 mm 降到 6.4 mm。
-8. 16:30，主管核验通过，片区与施工联动单同时关闭。
+8. 16:30，按井盖复测覆盖全部 10 个井盖，系统以原尺度重算：片区均值 7.0 mm 已达标，但 3 个相邻井盖仍成簇超标，判为残余热区，暂缓销项。
+9. 17:10，主管复核散点判读、残余热区处置后重算通过，签收销项；片区与施工联动单同时关闭，回执可随时查询。
 
 ## 快速启动
 
@@ -68,6 +69,7 @@ worker 使用固定参数 `DBSCAN(eps=26m, min_samples=3)` 对同一测量批次
 ```text
 backend/src/models.py                 领域表与关联
 backend/src/services/cluster.py       DBSCAN 与局部密度评分
+backend/src/services/residual.py      按井盖复测、残余热区、签收回执
 backend/src/main.py                   认证、领域路由、状态规则
 backend/scripts/seed_demo.py           幂等演示数据
 frontend/src/app.js                   四个业务页面与交互
@@ -101,3 +103,31 @@ Internal evaluation artifact.
 登录后打开「业务核验」，可以筛选和导出记录，主管可签认指定证据。
 
 - **道路封闭解除核对** 交叉核对封道许可、维修区状态、最后一次复测及许可截止。只有已完工并有主管验收的片区进入解封确认。
+- **复测残余热区与签收** 汇总每个片区的按井盖复测覆盖、原尺度残余聚类、超标散点判读与签收回执，直接给出「可签收销项」或具体暂缓原因。
+
+## 按井盖复测与残余热区销项
+
+片区均值达标不代表没有成片下沉：10 个井盖即使均值降到 7.0 mm，仍可能有 3 个相邻井盖停在 14 mm。维修复测因此按井盖逐个收数，再用**产生该片区的原始聚类尺度**（`eps=26m, min_samples=3`，取自批次 `AnalysisJob`）在仍然超标的井盖上重新聚类。
+
+完整闭环在「维修复测」页（`04 / RESURVEY CLOSEOUT`）：
+
+1. **补测**：逐行录入每个井盖的复测值（缺测行高亮）。可以分批保存，`recorded_count / required_count` 全部覆盖前不能判定。
+2. **残余热区判定**：对 `settlement_mm > 8.0` 的井盖运行 DBSCAN。成簇的写入 `residual_zones`（残余热区），未成簇的计入 `scatter_points`。
+3. **散点判读**：超标散点由主管逐个判为「散点」或「残余」；存在未判读散点或任一散点被判为残余时，暂缓销项。
+4. **签收销项**：只有无残余热区、散点判读完成、复测覆盖完整时才能签收。回执写入 `closeout_receipts`（每片区唯一），同时片区置为 `closed`。
+5. **读数变更**：签收前任何复测值被修改，证据指纹（`input_fingerprint`）与记录时不一致，旧判定立即标记 `stale`，必须重算后才能签。
+6. **回执重试**：回执丢失后重复签收不会重复销项——按片区返回原 `receipt_code`、签收人、说明与结论（`replayed=true`），并可用 `GET /api/zones/{id}/closeout-receipt` 随时查询。
+
+关键接口：
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/zones/{id}/readings` | 录入/补录按井盖复测值（改值即让旧判定失效） |
+| POST | `/api/zones/{id}/residual-analysis` | 以原尺度聚类超标井盖，生成不可变分析结果 |
+| POST | `/api/zones/{id}/scatter-decisions` | 主管判读超标散点（`accepted` / `residual`） |
+| POST | `/api/zones/{id}/closeout` | 幂等签收，返回回执；重复调用返回原结论 |
+| GET | `/api/zones/{id}/closeout-receipt` | 查询原签收结论 |
+| GET | `/api/zones/{id}/residual` | 复测覆盖、缺测、分析结果与销项阻断原因 |
+
+`GET /api/dashboard` 的每个片区也带 `residual` 汇总，复测页据此渲染。
+
